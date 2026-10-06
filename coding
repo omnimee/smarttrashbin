@@ -1,0 +1,476 @@
+//Coding Smart Trash Bin V1
+//Ari Setyawan - 1461404915
+//Fakultas Teknik - Jurusan Informatika
+//Universitas 17 Agustus 1945 Surabaya
+
+//Deklarasi Library
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <Servo.h>
+#include <DHT.h>;
+#include <SoftwareSerial.h>
+
+//Definisi pin untuk gsm modul sim800l
+SoftwareSerial SIM800L (52,53);// RX | TX
+// Connect the SIM800L TX to Arduino pin 52 RX. 
+// Connect the SIM800L RX to Arduino pin 53 TX. 
+
+//Sensor DHT22 untuk sampah basah
+#define DHTPIN 2  //pin yang digunakan
+#define DHTTYPE DHT22   //DHT22 (AM2302)
+DHT dht(DHTPIN, DHTTYPE); //Inisialisasi DHT sensor untuk normal 16mhz Arduino
+
+//Sensor Infrared
+#define digitalInPin1 3 //IR NON LOGAM
+#define digitalInPin2 4 //IR KERING
+
+//Sensor ultrasonik untuk kepenuhan
+#define trigPinlogam 5 //Kepenuhan Tray Sampah logam
+#define echoPinlogam 6 //Kepenuhan Tray Sampah logam
+#define trigPinbasah 7 //Kepenuhan Tray Sampah basah
+#define echoPinbasah 8 //Kepenuhan Tray Sampah basash
+#define trigPinkering 9 //Kepenuhan Tray Sampah kering
+#define echoPinkering 10 //Kepenuhan Tray Sampah kering
+
+//variabel GSM
+int normalDistance;
+boolean triggeredlogam = false;
+boolean triggeredbasah = false;
+boolean triggeredkering = false;
+
+long durationlogam, distancelogam, durationbasah, distancebasah, durationkering, distancekering;
+
+//variabel sensor IR
+    int sensorValue1 = 0;
+    int sensorValue2 = 0;
+
+//variabel sensor DHT22
+    int chk;
+    float hum;  //Stores humidity value
+    float temp; //Stores temperature value
+
+//variabel sensor logam
+    int inputPin = 13;
+    int val = 0;
+
+//Deklarasi LCD + i2C
+    LiquidCrystal_I2C lcd(0x3F, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE);
+
+//Pin buzzer
+    int piezoPin = 22;
+
+//Pin Led jenis Sampah
+int ledlogam = 14;
+int ledbasah = 15;
+int ledkering = 16;
+
+// Deklarasi servo
+    Servo servo1;
+    Servo servo2;
+
+//gsm
+boolean triggered = false;
+
+void setup() {
+    pinMode(inputPin, INPUT); //sensor logam
+    Wire.begin();             
+    lcd.begin(16, 2);         
+    lcd.clear();              //clear lcd
+    delay(1000);
+    Serial.begin(9600);
+    delay(100);
+
+    // start th serial communication with the host computer
+    //Serial.begin(9600);
+    while(!Serial);
+    Serial.println("Arduino with SIM800L is ready");
+ 
+    // start communication with the SIM800L in 9600
+    SIM800L.begin(115200);  
+    Serial.println("SIM800L started at 115200");
+    delay(1000);
+    Serial.println("Setup Complete! SIM800L is Ready!");
+         
+    
+    dht.begin();              //sensor dht
+    pinMode(24, INPUT);       //sensor basah
+    pinMode(23, OUTPUT);      //buzzer hitam
+    pinMode(30, OUTPUT);      //led penuh logam
+    pinMode(31, OUTPUT);      //led penuh basah
+    pinMode(32, OUTPUT);      //led penuh kering
+    pinMode(ledlogam, OUTPUT); //led logam
+    pinMode(ledbasah, OUTPUT); //led basah
+    pinMode(ledkering, OUTPUT); //led kering 
+
+//Inisialisasi sensor Ultrasonik
+    pinMode(trigPinlogam, OUTPUT);
+    pinMode(echoPinlogam, INPUT);
+    pinMode(trigPinbasah, OUTPUT);
+    pinMode(echoPinbasah, INPUT);
+    pinMode(trigPinkering, OUTPUT);
+    pinMode(echoPinkering, INPUT);
+
+long durationlogam, distancelogam, durationbasah, distancebasah, durationkering, distancekering;
+
+while (millis()<5000){
+digitalWrite(trigPinlogam, LOW);
+delayMicroseconds(2);
+digitalWrite(trigPinlogam, HIGH);
+delayMicroseconds(10);
+digitalWrite(trigPinlogam, LOW);
+durationlogam = pulseIn(echoPinlogam, HIGH);
+distancelogam= durationlogam*0.034/2;
+normalDistance = distancelogam;
+Serial.print("Distance logam : ");
+Serial.println(distancelogam);
+
+digitalWrite(trigPinbasah, LOW);
+delayMicroseconds(2);
+digitalWrite(trigPinbasah, HIGH);
+delayMicroseconds(10);
+digitalWrite(trigPinbasah, LOW);
+durationbasah = pulseIn(echoPinbasah, HIGH);
+distancebasah = durationbasah*0.034/2;
+normalDistance = distancebasah;
+Serial.print("Distance basah: ");
+Serial.println(distancebasah);
+
+digitalWrite(trigPinkering, LOW);
+delayMicroseconds(2);
+digitalWrite(trigPinkering, HIGH);
+delayMicroseconds(10);
+digitalWrite(trigPinkering, LOW);
+durationkering = pulseIn(echoPinkering, HIGH);
+distancekering = durationkering*0.034/2;
+normalDistance = distancekering;
+Serial.print("Distance kering: ");
+Serial.println(distancekering);
+
+}
+
+//Pin servo
+    servo1.attach(11);
+    servo2.attach(12);
+     
+              }
+
+void loop() {
+
+//led sampah
+digitalWrite(ledlogam, HIGH);
+digitalWrite(ledbasah, HIGH);
+digitalWrite(ledkering, HIGH);
+
+
+//membaca data sensor Inframerah menyimpannya ke variabel sensorValue.
+    sensorValue1 = digitalRead(digitalInPin1);
+    sensorValue2 = digitalRead(digitalInPin2);
+
+//membaca data dan menyimpannya ke variabel hum dan temp.
+    hum = dht.readHumidity();
+    temp= dht.readTemperature();
+
+//menampilkan nilai kelembaban dan temperatur, ke serial monitor.
+    Serial.print("\n\n___Smart Trashbin V.1___");
+    Serial.print("\n\nMonitoring....");
+    Serial.print("\nHumidity: ");
+    Serial.print(hum);
+    Serial.print(" %, Temp: ");
+    Serial.print(temp);
+    Serial.println(" Celsius");
+    delay(1000); //Delay 2 detik.
+
+//Menu utama
+lcd.clear();
+lcd.clear();
+lcd.setCursor(0,0);
+lcd.print(" SMART TRASHBIN ");
+lcd.setCursor(0,1);
+lcd.print(" STB-01| ");
+lcd.print(hum);
+
+//ERROR
+  if(sensorValue1 == 0 && sensorValue2 == 0){ //checks if object is there or not
+    Serial.println("\nSTB ERROR");
+
+  Serial.println("Set format SMS ke ASCII");
+  SIM800L.write("AT+CMGF=1\r\n");
+  delay(1000);
+ 
+  Serial.println("SIM800L Set SMS ke Nomor Tujuan");
+  SIM800L.write("AT+CMGS=\"082139932041\"\r\n");
+  delay(1000);
+   
+  Serial.println("SIM800L Send SMS content");
+  SIM800L.write("TEMPAT SAMPAH ERROR BOS, SEGERA DI CEK, TRUS LANJUTIN NGOPI LAGI");
+  delay(1000);
+   
+  Serial.println("Mengirim Char Ctrl+Z / ESC untuk keluar dari menu SMS");
+  SIM800L.write((char)26);
+  delay(1000);
+    
+    lcd.clear();
+    lcd.setCursor(0,0); 
+    lcd.print("STB ERROR");
+    lcd.setCursor(0,1);
+    lcd.print("HUBUNGI PETUGAS");
+    Serial.print("\nTEMPAT SAMPAH EROR BOS");
+    Serial.print("\nKIRIM SMS KE PETUGAS");
+    digitalWrite(23, HIGH);
+    delay(1000);
+    exit(0);
+    }
+    else {
+      digitalWrite(23, LOW);
+      delay(1000);
+      }
+
+      //Sensor logam membaca data, jika status HIGH maka servo kembali ke posisi awal.
+      val = digitalRead(inputPin);
+      Serial.print("sensor logam = ");
+      Serial.print(val);
+      if (val == HIGH){
+      servo1.write(55);
+      delay(1000);
+      } 
+      //Sensor logam membaca data, menggerakkan servo1 ke kanan, menampilkan pesan lcd dan membunyikan buzzer. 
+      else {
+        Serial.println(val);
+        lcd.clear();
+        lcd.setCursor(0,0); 
+        lcd.print("SAMPAH LOGAM");
+        lcd.setCursor(0,1);
+        lcd.print("METAL TRASH");
+        Serial.println("SAMPAH LOGAM");
+        digitalWrite(ledlogam, HIGH);
+        delay(1000);
+        digitalWrite(ledlogam, LOW);
+        delay(1000);
+        tone(piezoPin, 500, 500);
+        servo1.write(-120);
+        Serial.println("servologam");
+        delay(1000);
+            }
+//Sampah non logam
+  Serial.print("\nsensor1 = ");
+  Serial.print(sensorValue1);
+
+  if(sensorValue1 == 0){ //checks if object is there or not
+    Serial.print("\nBenda nonlogam terdeteksi");
+    servo1.write(120);
+    delay(500);
+    }
+    else{
+    servo1.write(50);
+    //delayMicroseconds(20);
+    Serial.print("\nBenda nonlogam tidak terdeteksi");
+    delay(500);
+    }
+
+//Sampah Basah
+      //Jika Kondisi sensor LOW .... , maka servo2 akan bergerak ke kanan dan lcd menampilkan pesan, buzzer berbunyi.
+      if (digitalRead(24) == LOW){
+          servo2.write(-120);
+          lcd.clear();
+          lcd.setCursor(0,0);
+          lcd.print("SAMPAH BASAH");
+          lcd.setCursor(0,1);
+          lcd.print("WET TRASH");
+          Serial.print("\nSampah basah terdeteksi");
+          digitalWrite(ledbasah, LOW);
+          delay(1000);
+          digitalWrite(ledbasah, HIGH);
+          delay(1000);
+          tone(piezoPin, 1000, 500);
+          delay(2000);
+                      }
+         //Jika Kondisi sensor HIGH .... , maka servo2 akan bergerak ke posisi awal dan kembali ke Menu utama.
+         else if (digitalRead(24) == HIGH){
+              servo2.write(40);
+              delay(5000);
+          }
+
+//Sampah Kering
+Serial.print("\nsensor2 = ");
+Serial.print(sensorValue2);
+      //Jika Sensor IR bernilai 0, maka servo2 akan bergerak ke kiri, dan lcd menampilkan pesan, buzzer berbunyi.
+      if(sensorValue2 == 0){ //cek jika obyek ada atau tidak.
+      Serial.print("\nSampah kering terdeteksi");
+      digitalWrite(ledbasah, LOW);
+      delay(1000);
+      digitalWrite(ledbasah, HIGH);
+      delay(1000);
+      servo2.write(120);
+      lcd.clear();
+      lcd.setCursor(0,0);
+      lcd.print("SAMPAH KERING");
+      lcd.setCursor(0,1);
+      lcd.print("DRY TRASH");
+      tone(piezoPin, 2000, 500);
+      delay(2000);
+                            }
+      //Jika benda tidak terdeteksi maka servo kembali ke posisi awal.
+      else{
+      servo2.write(40);
+      delay(1000);
+       Serial.print("\nSampah kering tidak terdeteksi");
+          }
+
+//ultragsmlogam
+digitalWrite(trigPinlogam, LOW);
+delayMicroseconds(2);
+digitalWrite(trigPinlogam, HIGH);
+delayMicroseconds(10);
+
+digitalWrite(trigPinlogam, LOW);
+durationlogam = pulseIn(echoPinlogam, HIGH);
+distancelogam = durationlogam*0.034/2;
+Serial.print("\n\nDistance logam: ");
+Serial.println(distancelogam);
+
+//ultragsmbasah
+digitalWrite(trigPinbasah, LOW);
+delayMicroseconds(2);
+digitalWrite(trigPinbasah, HIGH);
+delayMicroseconds(10);
+
+digitalWrite(trigPinbasah, LOW);
+durationbasah = pulseIn(echoPinbasah, HIGH);
+distancebasah = durationbasah*0.034/2;
+Serial.print("Distance basah: ");
+Serial.println(distancebasah);
+
+//ultragsmkering
+digitalWrite(trigPinkering, LOW);
+delayMicroseconds(2);
+digitalWrite(trigPinkering, HIGH);
+delayMicroseconds(10);
+
+digitalWrite(trigPinkering, LOW);
+durationkering = pulseIn(echoPinkering, HIGH);
+distancekering = durationkering*0.034/2;
+Serial.print("Distance kering: ");
+Serial.println(distancekering);
+
+if (distancelogam <= 29)
+{
+triggeredlogam = true;
+}
+else
+{
+triggeredlogam = false;
+}
+if (triggeredlogam)
+{
+
+ Serial.println("Set format SMS ke ASCII");
+  SIM800L.write("AT+CMGF=1\r\n");
+  delay(1000);
+ 
+  Serial.println("SIM800L Set SMS ke Nomor Tujuan");
+  SIM800L.write("AT+CMGS=\"082139932041\"\r\n");
+  delay(1000);
+   
+  Serial.println("SIM800L Send SMS content");
+  SIM800L.write("SAMPAH LOGAM PENUH BOS, SEGERA AMBIL, TRUS LANJUTIN NGOPI LAGI");
+  delay(1000);
+   
+  Serial.println("Mengirim Char Ctrl+Z / ESC untuk keluar dari menu SMS");
+  SIM800L.write((char)26);
+  delay(1000);
+
+    lcd.clear();
+    lcd.setCursor(0,0); 
+    lcd.print("LOGAM PENUH");
+    lcd.setCursor(0,1);
+    lcd.print("HUBUNGI PETUGAS");
+    digitalWrite(23, HIGH);
+    Serial.print("\nSAMPAH LOGAM PENUH");
+    Serial.print("\nKIRIM SMS KE PETUGAS");
+    digitalWrite(30, HIGH);       // led penuh logam nyala
+    delay(1000);
+    exit(0);
+}
+
+if (distancebasah <= 30)
+{
+triggeredbasah = true;
+}
+else
+{
+triggeredbasah = false;
+}
+if (triggeredbasah)
+{
+
+  Serial.println("Set format SMS ke ASCII");
+  SIM800L.write("AT+CMGF=1\r\n");
+  delay(1000);
+ 
+  Serial.println("SIM800L Set SMS ke Nomor Tujuan");
+  SIM800L.write("AT+CMGS=\"082139932041\"\r\n");
+  delay(1000);
+   
+  Serial.println("SIM800L Send SMS content");
+  SIM800L.write("SAMPAH BASAH PENUH BOS, SEGERA AMBIL, TRUS LANJUTIN NGOPI LAGI");
+  delay(1000);
+   
+  Serial.println("Mengirim Char Ctrl+Z / ESC untuk keluar dari menu SMS");
+  SIM800L.write((char)26);
+  delay(1000);
+  
+    lcd.clear();
+    lcd.setCursor(0,0); 
+    lcd.print("BASAH PENUH");
+    lcd.setCursor(0,1);
+    lcd.print("HUBUNGI PETUGAS");
+    digitalWrite(23, HIGH);
+    Serial.print("\nSAMPAH BASAH PENUH");
+    Serial.print("\nKIRIM SMS KE PETUGAS");
+    digitalWrite(31, HIGH);       // led penuh basah nyala
+    delay(1000);
+    exit(0);
+
+}
+
+if (distancekering <= 25)
+{
+triggeredkering = true;
+}
+else
+{
+triggeredkering = false;
+}
+if (triggeredkering)
+{
+
+  Serial.println("Set format SMS ke ASCII");
+  SIM800L.write("AT+CMGF=1\r\n");
+  delay(1000);
+ 
+  Serial.println("SIM800L Set SMS ke Nomor Tujuan");
+  SIM800L.write("AT+CMGS=\"082139932041\"\r\n");
+  delay(1000);
+   
+  Serial.println("SIM800L Send SMS content");
+  SIM800L.write("SAMPAH KERING PENUH BOS, SEGERA AMBIL, TRUS LANJUTIN NGOPI LAGI");
+  delay(1000);
+   
+  Serial.println("Mengirim Char Ctrl+Z / ESC untuk keluar dari menu SMS");
+  SIM800L.write((char)26);
+  delay(1000);
+
+    lcd.clear();
+    lcd.setCursor(0,0); 
+    lcd.print("KERING PENUH");
+    lcd.setCursor(0,1);
+    lcd.print("HUBUNGI PETUGAS");
+    digitalWrite(23, HIGH);
+    Serial.print("\nSAMPAH KERING PENUH");
+    Serial.print("\nKIRIM SMS KE PETUGAS");
+    digitalWrite(32, HIGH);       // led penuh kering nyala
+    delay(1000);
+    exit(0);
+}
+
+}
